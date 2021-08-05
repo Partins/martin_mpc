@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-## MPC controller with trajectory generation
-
 import rospy
 import time
 import math
@@ -31,6 +29,7 @@ STICK_HIGH  = 2000
 SWITCH_LOW  = 1000
 SWITCH_HIGH = 2000
 
+# Channels
 ROLL_CHN    = 0
 PITCH_CHN   = 1
 THR_CHN     = 2
@@ -38,7 +37,7 @@ YAW_CHN     = 3
 AUX1        = 4 # RC_OVR
 AUX2        = 5
 AUX3        = 6
-AUX4        = 7 # ARM
+AUX4        = 7 # ARM 
 
 class UAV:
 
@@ -129,94 +128,50 @@ class UAV:
 
         # Main loop
         self.xr = [0.0 ,0.0, 2.0, 0.0 ,0.0 ,0.0 ,0.0, 0.0]  # Reference signal
+
         i = 0
         I = 0.02
         antiwind = 0.3
         T = 10
+
+        # Generate a trajectory                                   
         traj_pos, traj_vel = self.generate_trajectory([0,0,2], [0,0,0], self.RATE,T)
+        # Save last point to use for next trajectory generation
         self.traj_pos0 = [traj_pos[self.RATE*T-1, 0], traj_pos[self.RATE*T-1, 1], traj_pos[self.RATE*T-1, 2]]
         self.traj_vel0 = [traj_vel[self.RATE*T-1, 0], traj_vel[self.RATE*T-1, 1], traj_vel[self.RATE*T-1, 2]]
+
         self.msg.z = 0
-        
-        n_loops = 0
-        
+        n_loops = 0 # Counter of loops
+
+####################################### main thing ############################################33
+
         while not rospy.is_shutdown():
            
             n_loops += 1
             
-            tmp_eul = self.state_update_service(False)
+            tmp_eul = self.state_update_service(False) # Controls absolute/relative positioning
 
+            # Antiwind of the error to the fiducial (maybe not needed?)
             if abs(self.tot_error[0]) <= antiwind:
                 self.tot_error[0] += -self.x_states[0]*I
 #
             if abs(self.tot_error[1]) <= antiwind:
                 self.tot_error[1] += self.x_states[1]*I
-            #if abs(self.tot_error[2]) <= 1:
-            #    self.tot_error[2] += (self.xr[2]-self.x_states[2])*I
 
-           # if abs(self.x_states[0]) < 0.1:
-            #    self.tot_error[0] = 0
-            #if abs(self.x_states[1]) < 0.1:
-            #   self.tot_error[1] = 0
-            
-            
-            #rospy.logwarn(self.x_states[0]-self.xr[0])
-            self.xr[0] = traj_pos[i,0]
-            self.xr[1] = traj_pos[i,1]
-            self.xr[2] = traj_pos[i,2]
+            # Setting the next point in the trajectory as reference 
+            self.xr[0] = traj_pos[i,0]  #
+            self.xr[1] = traj_pos[i,1]  # Position
+            self.xr[2] = traj_pos[i,2]  #
     
-            self.xr[3] = traj_vel[i,0]
-            self.xr[4] = traj_vel[i,1]
-            self.xr[5] = traj_vel[i,2]
+            self.xr[3] = traj_vel[i,0]  #
+            self.xr[4] = traj_vel[i,1]  # Velocity
+            self.xr[5] = traj_vel[i,2]  #
 
-            self.plot_msg.data = [self.xr[0], self.xr[1]]
-            # self.plot_msg.data = [  traj_pos[0,0], \
-            #                    traj_pos[0,1], \
-            #                    traj_pos[1,0], \
-            #                    traj_pos[1,1], \
-            #                    traj_pos[2,0], \
-            #                    traj_pos[2,1], \
-            #                    traj_pos[3,0], \
-            #                    traj_pos[3,1], \
-            #                    traj_pos[4,0], \
-            #                    traj_pos[4,1], \
-            #                    traj_pos[5,0], \
-            #                    traj_pos[5,1], \
-            #                    traj_pos[6,0], \
-            #                    traj_pos[6,1], \
-            #                    traj_pos[7,0], \
-            #                    traj_pos[7,1], \
-            #                    traj_pos[8,0], \
-            #                    traj_pos[8,1], \
-            #                    traj_pos[9,0], \
-            #                    traj_pos[9,1], \
-            #                    traj_pos[10,0], \
-            #                    traj_pos[10,1], \
-            #                    traj_pos[11,0], \
-            #                    traj_pos[11,1], \
-            #                    traj_pos[12,0], \
-            #                    traj_pos[12,1], \
-            #                    traj_pos[13,0], \
-            #                    traj_pos[13,1], \
-            #                    traj_pos[14,0], \
-            #                    traj_pos[14,1], \
-            #                    traj_pos[15,0], \
-            #                    traj_pos[15,1], \
-            #                    traj_pos[16,0], \
-            #                    traj_pos[16,1], \
-            #                    traj_pos[17,0], \
-            #                    traj_pos[17,1], \
-            #                    traj_pos[18,0], \
-            #                    traj_pos[18,1], \
-            #                    traj_pos[19,0], \
-            #                    traj_pos[19,1], \
-            #                    traj_pos[20,0], \
-            #                    traj_pos[20,1]]
-
-            #rospy.logwarn(np.shape(traj))
+            # Optimization (mpc.py)
             resp1 = self.mpc_calc(self.xr, [0.0, 0.0, 9.8], self.x_states, self.tot_error)
 
-            
+            # Plotting
+            self.plot_msg.data = [self.xr[0], self.xr[1]]
             self.plot_msg.header.stamp = rospy.Time.now()
             self.pub_plotter.publish(self.plot_msg)
 
@@ -228,35 +183,26 @@ class UAV:
             self.msg.F = resp1.control_signals[2]/9.8
             self.pub_command.publish(self.msg)
 
-            # Trajectory generation
+            # Trajectory generation is 
             if n_loops == self.RATE*T:    
                 traj_pos, traj_vel = self.generate_trajectory([2,2,2],[0,0,0], self.RATE, 3*T)
                 self.traj_pos0 = [traj_pos[self.RATE*T-1, 0], traj_pos[self.RATE*T-1, 1], traj_pos[self.RATE*T-1, 2]]
                 self.traj_vel0 = [traj_vel[self.RATE*T-1, 0], traj_vel[self.RATE*T-1, 1], traj_vel[self.RATE*T-1, 2]]
                 n_loops = 0
-                #for i in range(20*T):
-                #    pose = PoseStamped()
-                #    pose.pose.position.x = traj_pos[i,0]
-                #    pose.pose.position.y = traj_pos[i,0]
-                #    pose.pose.position.z = traj_pos[i,0]
-#
-                #    pose.pose.orientation.x = 0
-                #    pose.pose.orientation.y = 0
-                #    pose.pose.orientation.z = 0
-                #    pose.pose.orientation.w = 0
-                #    path_msg.poses.append(pose)
-#
-                #self.path_pub.publish(path_msg)
-                #rospy.logwarn("NEW TRAJ")
 
-
-                
-            
             self.rate.sleep()
 
+########################################### MAIN END ###################################################################
+
+    ## State Update Service
+    #   This service gets the state of the UAV relative to the world. 
+    #   If the tag_tracking is set to True the position will be relative to the
+    #   QR-code while setting it to False it gives the absolute position in 
+    #   the world frame. 
     def state_update_service(self, tag_tracking=True):
         self.states = self.get_model('multirotor', 'ground_plane')
 
+        # Relative vs. absolute positioning
         if tag_tracking:
             self.x_states[0] = -self.tag_x# - 0.05
             self.x_states[1] = -self.tag_y# - 0.05
@@ -264,15 +210,17 @@ class UAV:
             self.x_states[0] = self.states.pose.position.x
             self.x_states[1] = self.states.pose.position.y
         self.x_states[2] = self.states.pose.position.z
-            
+        
+        # Linear velocities
         self.x_states[3] = self.states.twist.linear.x
         self.x_states[4] = self.states.twist.linear.y
         self.x_states[5] = self.states.twist.linear.z
+
+        # Conversion
         y = self.states.pose.orientation.y
         x = self.states.pose.orientation.x
         z = self.states.pose.orientation.z
-        w = self.states.pose.orientation.w
-#           
+        w = self.states.pose.orientation.w 
         tmp_eul = self.quaternion_to_euler_angle_vectorized1( \
                                             self.states.pose.orientation.w, \
                                             self.states.pose.orientation.x, \
@@ -282,6 +230,7 @@ class UAV:
         self.x_states[6] = tmp_eul[0]   # Roll
         self.x_states[7] = tmp_eul[1]   # Pitch
         self.yaw = tmp_eul[2]
+
         return tmp_eul
 
     def user_command(self, msg):
@@ -289,6 +238,7 @@ class UAV:
             self.land = 1
         else:
             self.land = 0
+
     def quaternion_to_euler_angle_vectorized1(self, w, x, y, z):
 
         t0 = +2.0 * (w * x + y * z)
@@ -307,9 +257,8 @@ class UAV:
         return roll_x, pitch_y, yaw_z 
 
     def get_tag(self, msg):
-        #rospy.logwarn(type(msg.detections[0].pose.pose.pose.position.x))
+
         try:
-            
             tag_pos = np.array([[msg.detections[0].pose.pose.pose.position.x],\
                                 [msg.detections[0].pose.pose.pose.position.y],\
                                 [msg.detections[0].pose.pose.pose.position.z]])
@@ -319,8 +268,7 @@ class UAV:
             
             self.tag_x = tag_pos[0,0]
             self.tag_y = tag_pos[1,0]
-            #rospy.logwarn("TAG")
-            #rospy.logwarn(self.tag_x)
+
         except:
             pass
 
@@ -354,6 +302,7 @@ class UAV:
 
     def generate_trajectory(self, goal_pos, goal_vel, rate, T):
         n = T * rate # Amount of points
+
         # From CORKE:  
         # AMAT*x = BMAT
         #rospy.logwarn(n)
@@ -363,10 +312,7 @@ class UAV:
                          [5*T**4,4*T**3,3*T**2,2*T,1,0], \
                          [0,0,0,2,0,0], \
                          [20*T**3,12*T**2,6*T,2,0,0]])
-        
-        #BMAT = np.array([ self.x_states[0:3], goal_pos, \
-        #                  self.x_states[3:6], [0,0,0], \
-        #                  [0,0,0], [0,0,0] ])
+
         BMAT = np.array([ self.traj_pos0, goal_pos, \
                           self.traj_vel0, [0,0,0], \
                           [0,0,0], [0,0,0] ])
@@ -374,12 +320,7 @@ class UAV:
         x = np.transpose(np.linalg.inv(AMAT) @ BMAT)
         test_pos = np.array([self.traj_pos0])
         test_vel = np.array([self.traj_vel0])
-        #rospy.logwarn("STATES")
-        #rospy.logwarn(self.x_states[3:6])
-        #rospy.logwarn("INDEX0")
-        #rospy.logwarn(test)
 
-        #rospy.logwarn(test)
         
         # Position
         for t in range(1,n+1):
@@ -393,38 +334,27 @@ class UAV:
             t_mat = np.array([ [5*t**4], [4*t**3], [3*t**2], [2*t], [1], [0] ])
             test_vel = np.append(test_vel, np.transpose(x @ t_mat), axis=0)
        
-        path_msg = Path()
-        pose = PoseStamped()
-        rospy.logwarn(test_pos[0,0])
-        pos = 0
-        for pos in range(0,10):
-            pose.header.stamp = rospy.Time.now()
-            pose.header.frame_id = "/my_cs"
-            pose.header.seq = pos
-            pose.pose.position.x = pos
-            pose.pose.position.y = pos + 1
-            pose.pose.position.z = pos + 2
-            path_msg.poses.append(pose)
-            path_msg.header.frame_id = "/my_cs"
-            path_msg.header.stamp = rospy.Time.now()
-            
-            self.path_pub.publish(path_msg)
-    
-            
+       # For publishing the path as points for RVIZ. NOT WORKING RN
+       # path_msg = Path()
+       # pose = PoseStamped()
+       # rospy.logwarn(test_pos[0,0])
+       # pos = 0
 
-            
-        
-
-        
-
+       # for pos in range(0,10):
+       #     pose.header.stamp = rospy.Time.now()
+       #     pose.header.frame_id = "/my_cs"
+       #     pose.header.seq = pos
+       #     pose.pose.position.x = pos
+       #     pose.pose.position.y = pos + 1
+       #     pose.pose.position.z = pos + 2
+       #     path_msg.poses.append(pose)
+       #     path_msg.header.frame_id = "/my_cs"
+       #     path_msg.header.stamp = rospy.Time.now()
+       #     
+       #     self.path_pub.publish(path_msg)
 
         return test_pos, test_vel
 
-        #
-
-
-        #BMAT = self.x_states[0:3]
-        #rospy.logwarn(x)
     # Subscriber callback. But I'm wondering about race conditions. Maybe good
     # to use ServiceProxy to get the states directly in the controller when 
     # needed. Will keep this here for now
