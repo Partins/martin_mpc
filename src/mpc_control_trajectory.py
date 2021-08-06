@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from rosflight_msgs.msg import Command, RCRaw, Status
 from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from rospy.impl.transport import INBOUND
 from std_msgs.msg import Float64, String, Int64
 from gazebo_msgs.msg import ModelStates, ModelState
@@ -49,6 +49,7 @@ class UAV:
         self.sub_status         = rospy.Subscriber('status', Status, self.get_status)
         self.tag_pos            = rospy.Subscriber('tag_detections', AprilTagDetectionArray, self.get_tag)
         self.control_command    = rospy.Subscriber('control_command', String, self.user_command)
+        self.state_update       = rospy.Subscriber('multirotor/truth/NED', Odometry, self.get_state)
 
         ## Publishers
         self.pub_command    = rospy.Publisher('command', Command, queue_size=1)
@@ -85,7 +86,8 @@ class UAV:
         self.traj_pos0  = [0, 0, 0]
         self.traj_vel0  = [0, 0, 0]
         self.x_states   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        
+        self.x_states_topic   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
         state = ModelState()
         state.model_name = 'multirotor'
         state.reference_frame = 'ground_plane'
@@ -149,7 +151,7 @@ class UAV:
            
             n_loops += 1
             
-            tmp_eul = self.state_update_service(False) # Controls absolute/relative positioning
+            tmp_eul = self.get_current_state(False) # Controls absolute/relative positioning
 
             # Antiwind of the error to the fiducial (maybe not needed?)
             if abs(self.tot_error[0]) <= antiwind:
@@ -194,45 +196,33 @@ class UAV:
 
 ########################################### MAIN END ###################################################################
 
-    ## State Update Service
-    #   This service gets the state of the UAV relative to the world. 
+    ## Get current state
+    #   This function gets the state of the UAV without race conditions. 
     #   If the tag_tracking is set to True the position will be relative to the
     #   QR-code while setting it to False it gives the absolute position in 
     #   the world frame. 
-    def state_update_service(self, tag_tracking=True):
-        self.states = self.get_model('multirotor', 'ground_plane')
 
+    def get_current_state(self, tag_tracking=True):
+        #self.states = self.get_model('multirotor', 'ground_plane')
+        self.states = self.x_states_topic
         # Relative vs. absolute positioning
         if tag_tracking:
             self.x_states[0] = -self.tag_x# - 0.05
             self.x_states[1] = -self.tag_y# - 0.05
         else:
-            self.x_states[0] = self.states.pose.position.x
-            self.x_states[1] = self.states.pose.position.y
-        self.x_states[2] = self.states.pose.position.z
+            self.x_states[0] = self.states[0]
+            self.x_states[1] = self.states[1]
+        self.x_states[2] = self.states[2]
         
         # Linear velocities
-        self.x_states[3] = self.states.twist.linear.x
-        self.x_states[4] = self.states.twist.linear.y
-        self.x_states[5] = self.states.twist.linear.z
+        self.x_states[3] = self.states[3]
+        self.x_states[4] = self.states[4]
+        self.x_states[5] = self.states[5]
+       
+        self.x_states[6] = self.states[6]   # Roll
+        self.x_states[7] = self.states[7]   # Pitch
 
-        # Conversion
-        y = self.states.pose.orientation.y
-        x = self.states.pose.orientation.x
-        z = self.states.pose.orientation.z
-        w = self.states.pose.orientation.w 
-        tmp_eul = self.quaternion_to_euler_angle_vectorized1( \
-                                            self.states.pose.orientation.w, \
-                                            self.states.pose.orientation.x, \
-                                            self.states.pose.orientation.y, \
-                                            self.states.pose.orientation.z)
-                                                        
-        self.x_states[6] = tmp_eul[0]   # Roll
-        self.x_states[7] = tmp_eul[1]   # Pitch
-        self.yaw = tmp_eul[2]
-
-        return tmp_eul
-
+        return [0,0,self.yaw]
     def user_command(self, msg):
         if msg.data == "land":
             self.land = 1
@@ -256,6 +246,31 @@ class UAV:
 
         return roll_x, pitch_y, yaw_z 
 
+    ## Get State
+    # Subscribes to the Odometry topic and converts to world frame. 
+
+    def get_state(self, msg):
+        
+        self.x_states_topic[0] = msg.pose.pose.position.x
+        self.x_states_topic[1] = -msg.pose.pose.position.y
+        self.x_states_topic[2] = -msg.pose.pose.position.z
+        
+        # Linear velocities
+        self.x_states_topic[3] = msg.twist.twist.linear.x
+        self.x_states_topic[4] = -msg.twist.twist.linear.y
+        self.x_states_topic[5] = -msg.twist.twist.linear.z
+
+        tmp_eul = self.quaternion_to_euler_angle_vectorized1( \
+                                            msg.pose.pose.orientation.w, \
+                                            msg.pose.pose.orientation.x, \
+                                            msg.pose.pose.orientation.y, \
+                                            msg.pose.pose.orientation.z)
+                                                        
+        self.x_states_topic[6] = tmp_eul[0]   # Roll
+        self.x_states_topic[7] = tmp_eul[1]   # Pitch
+        self.yaw = tmp_eul[2]       
+
+
     def get_tag(self, msg):
 
         try:
@@ -271,6 +286,8 @@ class UAV:
 
         except:
             pass
+    
+
 
     def rotx(self, angle, point):
         c = np.cos(angle)
