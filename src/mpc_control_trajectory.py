@@ -44,7 +44,7 @@ class UAV:
     def __init__(self):
 
         rospy.init_node('UAV_control', anonymous=True)
-
+        self.x_states_topic   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         ## Subscribers
         self.sub_status         = rospy.Subscriber('status', Status, self.get_status)
         self.tag_pos            = rospy.Subscriber('tag_detections', AprilTagDetectionArray, self.get_tag)
@@ -56,6 +56,7 @@ class UAV:
         self.pub_raw        = rospy.Publisher('multirotor/RC', RCRaw, queue_size=1)
         self.pub_plotter    = rospy.Publisher('plotter', float_array, queue_size=1)
         self.path_pub       = rospy.Publisher('path', Path, queue_size=1)
+        
         
         ## Services
         self.set_state_service  = rospy.ServiceProxy('gazebo/set_model_state', SetModelState)
@@ -86,7 +87,7 @@ class UAV:
         self.traj_pos0  = [0, 0, 0]
         self.traj_vel0  = [0, 0, 0]
         self.x_states   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.x_states_topic   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
 
         state = ModelState()
         state.model_name = 'multirotor'
@@ -108,13 +109,13 @@ class UAV:
         state.twist.angular.y       = 0
         state.twist.angular.z       = 0
 
-        rospy.wait_for_service('/gazebo/set_model_state')
-        try:
-            set_state = self.set_state_service
-            result = set_state(state)
-            assert result.success is True
-        except rospy.ServiceException:
-            print("/gazebo/get_model_state service call failed") 
+        #rospy.wait_for_service('/gazebo/set_model_state')
+        #try:
+        #    set_state = self.set_state_service
+        #    result = set_state(state)
+        #    assert result.success is True
+        #except rospy.ServiceException:
+        #    print("/gazebo/get_model_state service call failed") 
         
         
 
@@ -134,32 +135,34 @@ class UAV:
         i = 0
         I = 0.02
         antiwind = 0.3
-        T = 10
+        T = 5
 
         # Generate a trajectory                                   
-        traj_pos, traj_vel = self.generate_trajectory([0,0,2], [0,0,0], self.RATE,T)
+        traj_pos, traj_vel = self.generate_trajectory([0,0,4], [0,0,0], self.RATE,T)
+        rospy.logwarn("Trajectory 1 generated")
         # Save last point to use for next trajectory generation
         self.traj_pos0 = [traj_pos[self.RATE*T-1, 0], traj_pos[self.RATE*T-1, 1], traj_pos[self.RATE*T-1, 2]]
         self.traj_vel0 = [traj_vel[self.RATE*T-1, 0], traj_vel[self.RATE*T-1, 1], traj_vel[self.RATE*T-1, 2]]
 
         self.msg.z = 0
         n_loops = 0 # Counter of loops
-
+        i = 0
 ####################################### main thing ############################################33
-
+        tag_follow = False
+        cntr = 0
         while not rospy.is_shutdown():
-           
+            cntr += 1
             n_loops += 1
-            
-            tmp_eul = self.get_current_state(False) # Controls absolute/relative positioning
-
+            i = i+1
+            tmp_eul = self.get_current_state(tag_follow) # Controls absolute/relative positioning
             # Antiwind of the error to the fiducial (maybe not needed?)
-            if abs(self.tot_error[0]) <= antiwind:
-                self.tot_error[0] += -self.x_states[0]*I
-#
-            if abs(self.tot_error[1]) <= antiwind:
-                self.tot_error[1] += self.x_states[1]*I
-
+            #if abs(self.tot_error[0]) <= antiwind:
+            #    self.tot_error[0] += -self.x_states[0]*I
+##
+            #if abs(self.tot_error[1]) <= antiwind:
+            #    self.tot_error[1] += self.x_states[1]*I
+            if i > self.RATE*T:
+                i = self.RATE*T
             # Setting the next point in the trajectory as reference 
             self.xr[0] = traj_pos[i,0]  #
             self.xr[1] = traj_pos[i,1]  # Position
@@ -168,18 +171,20 @@ class UAV:
             self.xr[3] = traj_vel[i,0]  #
             self.xr[4] = traj_vel[i,1]  # Velocity
             self.xr[5] = traj_vel[i,2]  #
-
+            
+            i = i+1
             # Optimization (mpc.py)
             resp1 = self.mpc_calc(self.xr, [0.0, 0.0, 9.8], self.x_states, self.tot_error)
 
             # Plotting
-            self.plot_msg.data = [self.xr[0], self.xr[1]]
-            self.plot_msg.header.stamp = rospy.Time.now()
-            self.pub_plotter.publish(self.plot_msg)
+            #self.plot_msg.data = [self.xr[0], self.xr[1]]
+            #self.plot_msg.header.stamp = rospy.Time.now()
+            #self.pub_plotter.publish(self.plot_msg)
 
             ## UAV Command message
             self.msg.header.stamp = rospy.Time.now()
             self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
+            
             self.msg.x =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
             self.msg.y = -math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1]
             self.msg.F = resp1.control_signals[2]/9.8
@@ -187,11 +192,27 @@ class UAV:
 
             # Trajectory generation is 
             if n_loops == self.RATE*T:    
-                traj_pos, traj_vel = self.generate_trajectory([2,2,2],[0,0,0], self.RATE, 3*T)
+                traj_pos, traj_vel = self.generate_trajectory([0,0,2],[0,0,0], self.RATE, 3*T)
                 self.traj_pos0 = [traj_pos[self.RATE*T-1, 0], traj_pos[self.RATE*T-1, 1], traj_pos[self.RATE*T-1, 2]]
                 self.traj_vel0 = [traj_vel[self.RATE*T-1, 0], traj_vel[self.RATE*T-1, 1], traj_vel[self.RATE*T-1, 2]]
                 n_loops = 0
+                cntr = cntr+1
+            if n_loops == self.RATE*T:
+                tag_follow = True
+                cntr = 0
+                rospy.logwarn("Tag following")
+                i = 0
 
+            if cntr == 100:
+                rospy.logwarn("LANDING")
+                traj_pos, traj_vel = self.generate_trajectory([0,0,0],[0,0,0], self.RATE, 30)
+                self.traj_pos0 = [traj_pos[self.RATE*T-1, 0], traj_pos[self.RATE*T-1, 1], traj_pos[self.RATE*T-1, 2]]
+                self.traj_vel0 = [traj_vel[self.RATE*T-1, 0], traj_vel[self.RATE*T-1, 1], traj_vel[self.RATE*T-1, 2]]
+                cntr = 0
+                i = 0
+
+           
+            rospy.logwarn(cntr)
             self.rate.sleep()
 
 ########################################### MAIN END ###################################################################
@@ -207,8 +228,8 @@ class UAV:
         self.states = self.x_states_topic
         # Relative vs. absolute positioning
         if tag_tracking:
-            self.x_states[0] = -self.tag_x# - 0.05
-            self.x_states[1] = -self.tag_y# - 0.05
+            self.x_states[0] = self.tag_y# - 0.05
+            self.x_states[1] = self.tag_x# - 0.05
         else:
             self.x_states[0] = self.states[0]
             self.x_states[1] = self.states[1]
@@ -278,8 +299,8 @@ class UAV:
                                 [msg.detections[0].pose.pose.pose.position.y],\
                                 [msg.detections[0].pose.pose.pose.position.z]])
 
-            tag_pos = self.rotz(-3.14/2, tag_pos)   # Rotate around Z
-            tag_pos = self.roty(3.14, tag_pos)      # Rotate around y
+            #tag_pos = self.rotz(-3.14/2, tag_pos)   # Rotate around Z
+            #tag_pos = self.roty(3.14, tag_pos)      # Rotate around y
             
             self.tag_x = tag_pos[0,0]
             self.tag_y = tag_pos[1,0]
