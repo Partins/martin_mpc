@@ -1,0 +1,12 @@
+# Define goal
+float32[] goal_pos
+float32[] goal_vel
+uint32 rate
+float32 time
+---
+#Define the result
+uint32 trajectory_id
+float32[] resulting_trajectory
+---
+# Define feedback message
+uint32 generated_points
