@@ -8,7 +8,7 @@ from scipy.signal import cont2discrete as c2d
 from scipy.linalg import expm
 import cvxpy as cp
 import matplotlib.pyplot as plt 
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Int16
 
 ## Services
 from gazebo_msgs.srv import GetModelState
@@ -21,7 +21,7 @@ import dynamic_reconfigure.client
 class UAV_model:
 
     def __init__(self):
-        
+        self.time_pub = rospy.Publisher('mpc_time', Int16, queue_size=1)
         ## observer things
         self.prev_inputs = [0, 0, 0] # u[k-1]
         rospy.init_node('mpc', anonymous=True)
@@ -101,9 +101,6 @@ class UAV_model:
         # Dynamic reconfiguration
         self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
         
-        
-        
-        
         rospy.logwarn("MPC READY")
         rospy.spin()
     
@@ -126,7 +123,6 @@ class UAV_model:
     
     def mpc_calc(self, req):
     
-        
         temp1 = -self.Bdd @ req.disturbance
         RH = np.transpose(np.concatenate([[temp1], [req.reference]], axis=1))
         tmp = self.LH_pinv @ RH
@@ -134,17 +130,14 @@ class UAV_model:
         input_ref = tmp[7:10,0]
         input_ref[2] = 9.8
         
-        #temp = np.concatenate([temp1, req.reference], axis=1)
-        #rospy.logwarn(reference)
         # Prediction horizon
         N = 10
         # Define problem
         # Three inputs roll desired, pitch desired, thrust
         u = cp.Variable((3,N))
+
         # Eight states
         x = cp.Variable((8,N+1))
-        #req.reference = req.reference - self.observer(req.states, self.prev_inputs)
-        #rospy.logwarn(self.observer(req.states, self.prev_inputs))
         rospy.logwarn(tmp)
         cost = 0
         constraints = [x[:,0] == req.states]    
@@ -164,6 +157,7 @@ class UAV_model:
         #rospy.logwarn(self.Bdd@self.d)
         
         #rospy.logwarn(u.value[:,0])
+        #self.time_pub.publish(2)
         return mpcsrvResponse(u.value[:,0])
 
     def observer(self, states, inputs, disturbance):
