@@ -1,0 +1,6 @@
+uint32 x
+uint32 y
+uint32 z
+float32 T
+---
+bool generated

@@ -156,7 +156,7 @@ class UAV_model:
 
         #rospy.logwarn(self.Bdd@self.d)
         
-        #rospy.logwarn(u.value[:,0])
+        rospy.logwarn(u.value[:,0])
         #self.time_pub.publish(2)
         return mpcsrvResponse(u.value[:,0])
 

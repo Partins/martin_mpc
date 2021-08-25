@@ -61,6 +61,8 @@ find_package(catkin REQUIRED COMPONENTS
 add_service_files(
   FILES
   mpcsrv.srv
+  landsrv.srv
+  gotosrv.srv
 )
 
 ## Generate actions in the 'action' folder
