@@ -114,12 +114,6 @@ class UAV_model:
 
         self.K  = np.array([config.K0, config.K1, config.K2, config.K3, \
                             config.K4, config.K5, config.K6, config.K7])
-
-       # self.d  = [config.d0, config.d1, config.d2, config.d3, \
-        #                   config.d4, config.d5, config.d6, config.d7] 
-
-
-        #rospy.logwarn(self.Q)
     
     def mpc_calc(self, req):
     

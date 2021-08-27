@@ -21,7 +21,15 @@ from rosflight_extras.srv import arm_uav
 from martin_mpc.srv import mpcsrv, landsrv, gotosrv
 from rosflight_extras.msg import *
 
+#Params
+import dynamic_reconfigure.client
+
 class UAV:
+
+    def dyn_callback(self, config):
+        self.tag_follow = config.tag_follow
+        self.tot_error[0] = 0
+        self.tot_error[1] = 0
 
     def __init__(self):
 
@@ -102,6 +110,9 @@ class UAV:
         except rospy.ServiceException:
             print("/gazebo/get_model_state service call failed") 
         
+        # Dynamic reconfiguration
+        self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
+        
         
 
     def run(self):
@@ -117,7 +128,7 @@ class UAV:
 
         i = 0
         I = 0.02
-        antiwind = 0.3
+        antiwind = 1
         T = 5
 
         # Generate a trajectory                                   
@@ -128,15 +139,20 @@ class UAV:
         self.msg.z = 0
         n_loops = 0 # Counter of loops
         self.traj_index = 0
+        I = 0.1
+        P = 1
+        D = 0.01
 ####################################### main thing ############################################33
-        tag_follow = False
+        self.tag_follow = False
         cntr = 0
         while not rospy.is_shutdown():
             #rospy.logwarn("RATE" + str(self.RATE))
             cntr += 1
             n_loops += 1
             self.traj_index += 1
-            tmp_eul = self.get_current_state(tag_follow) # Controls absolute/relative positioning
+            tmp_eul = self.get_current_state(self.tag_follow) # Controls absolute/relative positioning
+            rospy.logwarn([self.tag_y, self.tag_x])
+            #rospy.logwarn(self.tag_follow)
             if self.traj_index >= len(self.traj_pos):
                 self.traj_index -= 1
             # Setting the next point in the trajectory as reference 
@@ -147,6 +163,13 @@ class UAV:
             self.xr[3] = self.traj_vel[self.traj_index,0]  #
             self.xr[4] = self.traj_vel[self.traj_index,1]  # Velocity
             self.xr[5] = self.traj_vel[self.traj_index,2]  #
+
+                        # Antiwind of the error to the fiducial (maybe not needed?)
+            #if abs(self.tot_error[0]) <= antiwind:
+            #    self.tot_error[0] += -self.x_states[0]*I #+ self.x_states[0]*D
+###
+            #if abs(self.tot_error[1]) <= antiwind:
+            #    self.tot_error[1] += self.x_states[1]*I #+ self.x_states[1]*D
 
             # Optimization (mpc.py)
             #tic = rospy.Time.now()
@@ -176,7 +199,7 @@ class UAV:
     
     
     def landsrv(self, req):
-        T = 10 # Time to land
+        T = 60 # Time to land
 
         rospy.logwarn("Landing Service Initiated")
         
