@@ -10,7 +10,7 @@ import cvxpy as cp
 
 
 #from rosflight_msgs.msg import Command, RCRaw, Status
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Vector3
 from nav_msgs.msg import Path, Odometry
 from rospy.impl.transport import INBOUND
 from std_msgs.msg import Float64, String, Int64
@@ -76,6 +76,10 @@ class UAV:
         self.yaw        = 0
         self.land       = 0
         self.x_states   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.thrust = Vector3()
+        self.thrust.x = 0
+        self.thrust.y = 0
+        self.thrust.z = 0
         
 
         #state = ModelState()
@@ -162,7 +166,8 @@ class UAV:
             self.msg.roll =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
             self.msg.pitch = -(-math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1])
             self.msg.yaw_rate = 0
-            self.msg.thrust.z = resp1.control_signals[2]/20
+            self.thrust.z = resp1.control_signals[2]/20
+            self.msg.thrust = self.thrust
             self.pub_command.publish(self.msg)
             #rospy.logwarn(cntr)
             self.rate.sleep()
