@@ -19,7 +19,7 @@ from std_msgs.msg import Float64, String, Int64
 from apriltag_ros.msg import AprilTagDetectionArray
 #from rosflight_extras.srv import arm_uav
 from martin_mpc.srv import mpcsrv, landsrv, gotosrv
-from mavros_msgs.msg import AttitudeTarget
+from mav_msgs.msg import RollPitchYawrateThrust
 
 #Params
 import dynamic_reconfigure.client
@@ -42,7 +42,7 @@ class UAV:
         self.state_update       = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
 
         ## Publishers
-        self.pub_command     = rospy.Publisher('mavros/setpoint_raw/attitude', AttitudeTarget, queue_size=1)
+        self.pub_command     = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)
         #self.pub_raw        = rospy.Publisher('multirotor/RC', RCRaw, queue_size=1)
         #self.pub_plotter    = rospy.Publisher('plotter', float_array, queue_size=1)
         #self.path_pub       = rospy.Publisher('path', Path, queue_size=1)
@@ -58,7 +58,7 @@ class UAV:
         self.goto_srv           = rospy.Service('GOTO', gotosrv, self.gotosrv)
         
         ## Messages
-        self.msg        = AttitudeTarget()
+        self.msg        = RollPitchYawrateThrust()
         #self.plot_msg   = float_array() # Cutom float array msg type
 
         ## ROS
@@ -124,7 +124,7 @@ class UAV:
         rospy.logwarn("Trajectory 1 generated")
         # Save last point to use for next trajectory generation
         
-        self.msg.body_rate.z = 0
+        self.msg.thrust = 0
         n_loops = 0 # Counter of loops
         self.traj_index = 0
         #I = 0.1
@@ -159,12 +159,12 @@ class UAV:
             ## UAV Command message
             self.msg.header.stamp = rospy.Time.now()
             
-            self.msg.body_rate.x =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
-            self.msg.body_rate.y = -(-math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1])
-            self.msg.body_rate.z = 0
-            self.msg.thrust = resp1.control_signals[2]/25
+            self.msg.roll =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
+            self.msg.pitch = -(-math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1])
+            self.msg.yaw_rate = 0
+            self.msg.thrust = resp1.control_signals[2]/20
             self.pub_command.publish(self.msg)
-          
+            #rospy.logwarn(cntr)
             self.rate.sleep()
             
 
