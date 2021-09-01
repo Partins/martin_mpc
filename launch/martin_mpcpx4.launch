@@ -1,0 +1,20 @@
+<launch>
+
+  <arg name="mav_name" default="shafter3d"/>
+  <arg name="namespace" default="$(arg mav_name)" />
+  <arg name="log_output" default="screen" />
+
+
+
+  <group ns="$(arg namespace)" >
+
+
+
+</group>
+
+<node pkg="px4_comm" type="px4_comm_node" name="px4_comm" output="$(arg log_output)"/>
+<node pkg="martin_mpc" type="param_server.py" name="param_server" output="$(arg log_output)"/>
+<node pkg="martin_mpc" type="mpc.py" name="mpc" output="$(arg log_output)"/>
+<include file="$(find ros_viconstream)/launch/viconstream.launch"/>
+
+</launch>
