@@ -162,7 +162,7 @@ class UAV:
             self.msg.roll =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
             self.msg.pitch = -(-math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1])
             self.msg.yaw_rate = 0
-            self.msg.thrust = resp1.control_signals[2]/20
+            self.msg.thrust.z = resp1.control_signals[2]/20
             self.pub_command.publish(self.msg)
             #rospy.logwarn(cntr)
             self.rate.sleep()
