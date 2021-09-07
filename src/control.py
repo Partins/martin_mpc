@@ -61,7 +61,6 @@ class UAV:
         self.goto_srv           = rospy.Service('GOTO', gotosrv, self.gotosrv)
         
         ## Messages
-        self.msg_raw    = RCRaw()       # 1st Config in arm()
         self.msg        = Command()     # 1st Config in enable_computer_control()
         self.plot_msg   = float_array() # Cutom float array msg type
 
@@ -188,7 +187,7 @@ class UAV:
             
             self.msg.x =  math.cos(-tmp_eul[2]) * resp1.control_signals[0] + math.sin(-tmp_eul[2]) * resp1.control_signals[1]
             self.msg.y = -math.sin(-tmp_eul[2]) * resp1.control_signals[0] + math.cos(-tmp_eul[2]) * resp1.control_signals[1]
-            self.msg.F = resp1.control_signals[2]/9.8
+            self.msg.F = resp1.control_signals[2]/18
             self.pub_command.publish(self.msg)
           
             #rospy.logwarn(cntr)
