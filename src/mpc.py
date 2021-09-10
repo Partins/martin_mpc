@@ -132,8 +132,10 @@ class UAV_model:
 
         # Eight states
         x = cp.Variable((8,N+1))
-        rospy.logwarn(tmp)
+        #rospy.logwarn(tmp)
         cost = 0
+        y_hat = self.observer(req.states, self.prev_inputs, req.disturbance)
+        rospy.logwarn(req.states-y_hat)
         constraints = [x[:,0] == req.states]    
         for k in range(0,N):                                                                                                        # Input rate cost
             cost += cp.quad_form(x[:,k] - reference, self.Q) + cp.quad_form(u[:,k] - input_ref, self.R) #+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
@@ -150,15 +152,15 @@ class UAV_model:
 
         #rospy.logwarn(self.Bdd@self.d)
         
-        rospy.logwarn(u.value[:,0])
+        #rospy.logwarn(u.value[:,0])
         #self.time_pub.publish(2)
         return mpcsrvResponse(u.value[:,0])
 
     def observer(self, states, inputs, disturbance):
         
-        np.array([self.Ad, self.Bd])
+        x_states = np.matmul(self.Ad, states) + np.matmul(self.Bd, inputs)
         
-        return np.matmul(self.K,states - y_est)
+        return x_states
 
 if __name__ == '__main__':
     multirotor = UAV_model()
