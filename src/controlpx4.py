@@ -45,9 +45,8 @@ class UAV:
         self.pub_command     = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)
         #self.pub_raw        = rospy.Publisher('multirotor/RC', RCRaw, queue_size=1)
         #self.pub_plotter    = rospy.Publisher('plotter', float_array, queue_size=1)
-        #self.path_pub       = rospy.Publisher('path', Path, queue_size=1)
         #self.pub_state      = rospy.Publisher('uav_state', Odometry, queue_size=1)
-        
+        self.path_pub       = rospy.Publisher('path', Path, queue_size=1)
         
         ## Services
         self.mpc_calc           = rospy.ServiceProxy('MPC_calc', mpcsrv)

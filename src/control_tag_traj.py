@@ -37,7 +37,7 @@ class UAV:
 
     def __init__(self):
 
-        self.gazebo = True
+        self.gazebo = False
         rospy.init_node('UAV_control', anonymous=True)
         self.x_states_topic   = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         ## Subscribers
@@ -46,22 +46,21 @@ class UAV:
 
         if self.gazebo:
             self.pub_command    = rospy.Publisher('command', Command, queue_size=1)
-            self.state_update       = rospy.Subscriber('multirotor/truth/NED', Odometry, self.get_state)
+            self.state_update   = rospy.Subscriber('multirotor/truth/NED', Odometry, self.get_state)
         else:
-            self.state_update       = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
+            self.state_update   = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
+            self.pub_command    = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)    
 
 
         ## Publishers
         self.path_pub           = rospy.Publisher('path', Path, queue_size=1)
         self.uav_path_pub       = rospy.Publisher('uav_path', Path, queue_size=1)
+
         ## Services
         if self.gazebo:
             self.arm_srv            = rospy.ServiceProxy('arm_UAV', arm_uav)
             self.pc_control         = rospy.ServiceProxy('pc_control', arm_uav)
             self.set_state_service  = rospy.ServiceProxy('gazebo/set_model_state', SetModelState)
-
-        else:
-            self.pub_command     = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)    
         
         self.mpc_calc           = rospy.ServiceProxy('MPC_calc', mpcsrv)
         self.land_srv           = rospy.Service('Tag_land_UAV', landsrv, self.tag_landsrv)
@@ -161,7 +160,7 @@ class UAV:
 
         tmp_eul = self.get_current_state(False)
 
-        rospy.logwarn(self.x_states)
+        #rospy.logwarn(self.x_states)
         # Main loop
         self.xr = [self.x_states[0],self.x_states[1], self.x_states[2], 0.0 ,0.0 ,0.0 ,0.0, 0.0]  # Reference signal
 
@@ -184,8 +183,10 @@ class UAV:
 ####################################### main thing ############################################33
         self.tag_follow = False
         cntr = 0
-        self.msg.F = 0
-        
+        if self.gazebo:
+            self.msg.F = 0
+        else: 
+            self.msg.thrust = 0        
         while not rospy.is_shutdown():
             if not self.aborting:
                 #rospy.logwarn("RATE" + str(self.RATE))
@@ -320,8 +321,8 @@ class UAV:
             zerr = 0
         else:
             zerr = self.x_states[2]-0.2
-        rospy.logwarn('Zerror')
-        rospy.logwarn(zerr)
+        #rospy.logwarn('Zerror')
+        #rospy.logwarn(zerr)
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
                 [self.x_states[0], self.x_states[1], self.x_states[2]], \
                 [self.x_states[3], self.x_states[4], self.x_states[5]], \
