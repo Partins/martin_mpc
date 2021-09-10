@@ -215,6 +215,20 @@ class UAV:
 
         return True
 
+    #def abort(self, req):
+    #    T = 5 # Time to takeoff
+    #    while rospy.
+    #    rospy.logwarn("ABORTING")
+    #    self.msg.header.stamp = rospy.Time.now()
+    #    self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
+    #        
+    #    self.msg.x = 0
+    #    self.msg.y = 0
+    #    self.msg.F = 0
+    #    self.pub_command.publish(self.msg)
+#
+    #    return True
+
     def takeoffsrv(self, req):
         T = 5 # Time to takeoff
 
