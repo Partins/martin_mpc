@@ -394,7 +394,7 @@ class UAV:
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
                 [self.x_states[0], self.x_states[1], self.x_states[2]], \
                 [self.x_states[3], self.x_states[4], self.x_states[5]], \
-                [self.x_states[0],self.x_states[1], 2.0], [0,0,0], self.RATE,T)
+                [self.x_states[0],self.x_states[1], 1.5], [0,0,0], self.RATE,T)
         toc = rospy.Time.now()
         
         self.traj_index = 0
@@ -409,7 +409,7 @@ class UAV:
             self.path_msg.poses.append(pose)
         self.path_pub.publish(self.path_msg)
         self.ref_inputs = [0,0,9.8]
-        self.test_xr = [0.0, 0.0, 2.0, 0.0, 0.0, 0.3, 0.0, 0.0] 
+        self.test_xr = [0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0] 
         return True
 
     def gotosrv(self, msg):
