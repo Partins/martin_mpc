@@ -35,21 +35,21 @@ class UAV_model:
         self.K_roll = 0.15  # Roll angle gain
         self.K_pitch = 0.15 # Pitch angle gain
         RATE = 20
-        self.Q = np.diag([7, 7, 97.0, 1.0, 1.0, 1.0, 0.03, 0.03])
+        self.Q = np.diag([7, 7, 13.8, 1.0, 1.0, 1.0, 0.03, 0.03])
         #self.Q = np.diag([10, 10, 15.0, 3.0, 3.0, 3.0, 1.0, 1.0]) # Andreas
         self.R = 1*np.diag([3, 3, 1.0])
         self.Rd = 1*np.diag([3, 3, 1.0])
         #self.R = 1*np.diag([20.0, 20.0, 20.0]) # Andreas
-        self.K = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        self.K = np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         self.d = np.zeros(shape=(3,1), dtype=float)
 
         # Max/min values
-        self.umin = np.array([-3.14/12, -3.14/12, 0.0])
-        self.umax = np.array([3.14/12, 3.14/12, 18])
+        self.umin = np.array([-3.14/1, -3.14/1, 0.0])
+        self.umax = np.array([3.14/1, 3.14/1, 15])
 
-        self.xmin = np.array([-np.inf, -np.inf, 0, np.inf, np.inf, -5.0,
+        self.xmin = np.array([-np.inf, -np.inf, 0, -np.inf, -np.inf, -np.inf,
                  -3.14/12,-3.14/12])
-        self.xmax = np.array([np.inf, np.inf, 10.0, np.inf, np.inf, 5.0,
+        self.xmax = np.array([np.inf, np.inf, np.inf, np.inf, np.inf, np.inf,
                   3.14/12, 3.14/12])
 
         self.Ac = np.zeros(shape=(8, 8), dtype=float)
@@ -99,7 +99,7 @@ class UAV_model:
 
         #rospy.logwarn(np.shape(self.LH_pinv))
         # Dynamic reconfiguration
-        self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
+        #self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
         
         rospy.logwarn("MPC READY")
         rospy.spin()
@@ -112,48 +112,29 @@ class UAV_model:
 
         self.Rd = np.diag([config.Rd1, config.Rd2, config.Rd3])
 
-        self.K  = np.array([config.K0, config.K1, config.K2, config.K3, \
+        self.K  = np.diag([config.K0, config.K1, config.K2, config.K3, \
                             config.K4, config.K5, config.K6, config.K7])
     
     def mpc_calc(self, req):
-    
-        temp1 = -self.Bdd @ req.disturbance
-        RH = np.transpose(np.concatenate([[temp1], [req.reference]], axis=1))
-        tmp = self.LH_pinv @ RH
-        reference = tmp[0:8,0]
-        input_ref = tmp[7:10,0]
-        input_ref[2] = 9.8
-        
-        # Prediction horizon
-        N = 10
-        # Define problem
-        # Three inputs roll desired, pitch desired, thrust
-        u = cp.Variable((3,N))
 
-        # Eight states
-        x = cp.Variable((8,N+1))
-        #rospy.logwarn(tmp)
-        cost = 0
-        y_hat = self.observer(req.states, self.prev_inputs, req.disturbance)
-        rospy.logwarn(req.states-y_hat)
-        constraints = [x[:,0] == req.states]    
+        N = 10                  # Prediction horizon 
+        u = cp.Variable((3,N))  # Three inputs roll desired, pitch desired, thrust
+        x = cp.Variable((8,N+1))# Eight states
+
+        cost = 0 # Initialization
+        print(req.states)
+        constraints = [x[:,0] == req.states]
+
         for k in range(0,N):                                                                                                        # Input rate cost
-            cost += cp.quad_form(x[:,k] - reference, self.Q) + cp.quad_form(u[:,k] - input_ref, self.R) #+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
-            constraints += [x[:,k+1] == self.Ad@x[:,k] + self.Bd@u[:,k] - temp1] 
+            cost += cp.quad_form(x[:,k], self.Q) + cp.quad_form(u[:,k] - req.input_ref, self.R)# + cp.quad_form(req.reference - x[:,N], self.K)#+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
+            constraints += [x[:,k+1] == self.Ad@x[:,k] + self.Bd@u[:,k]] #  - self.Bdd@req.disturbance
             constraints += [self.umin <= u[:,k], u[:,k] <= self.umax]
-            #constraints += [self.xmin <= x[:,k], x[:,k] <= self.xmax]
         
         prob = cp.Problem(cp.Minimize(cost), constraints)
         prob.solve()
-
-        #[u.value[:,0], x.value[:,0]]
-        
         self.prev_inputs = u.value[:,0]
 
-        #rospy.logwarn(self.Bdd@self.d)
-        
-        #rospy.logwarn(u.value[:,0])
-        #self.time_pub.publish(2)
+        #print(u.value)
         return mpcsrvResponse(u.value[:,0])
 
     def observer(self, states, inputs, disturbance):
