@@ -6,6 +6,8 @@ import math
 import numpy as np
 from scipy.signal import cont2discrete as c2d
 import cvxpy as cp
+import opengen as og
+import casadi.casadi as cs
 #import matplotlib.pyplot as plt 
 
 
@@ -32,9 +34,16 @@ class UAV:
         self.tag_follow = config.tag_follow
         self.tot_error[0] = 0
         self.tot_error[1] = 0
-        self.P = config.P
-        self.I = config.I
-        self.D = config.D
+        self.Q_state  = [config.Q0, config.Q1, config.Q2, config.Q3, \
+                           config.Q4, config.Q5, config.Q6, config.Q7]
+        
+        self.Q_hovering  = [config.R1, config.R2, config.R3]
+
+        self.Q_u = [config.Rd1, config.Rd2, config.Rd3]
+
+        self.K  = [config.K0, config.K1, config.K2, config.K3, \
+                            config.K4, config.K5, config.K6, config.K7]
+    
 
     def __init__(self):
 
@@ -47,7 +56,7 @@ class UAV:
 
         if self.gazebo:
             self.pub_command    = rospy.Publisher('command', Command, queue_size=1)
-            self.state_update   = rospy.Subscriber('multirotor/truth/NED', Odometry, self.get_state)
+            self.state_update   = rospy.Subscriber('multirotor/truth/NWU', Odometry, self.get_state)
         else:
             self.state_update   = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
             self.pub_command    = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)    
@@ -66,6 +75,7 @@ class UAV:
         
         self.mpc_calc           = rospy.ServiceProxy('MPC_calc', mpcsrv)
         self.tag_land_srv       = rospy.Service('Tag_land_UAV', landsrv, self.tag_landsrv)
+        self.tag_follow_srv     = rospy.Service('Tag_follow', landsrv, self.follow_tag)
         self.tag_align_srv       = rospy.Service('Tag_align_UAV', landsrv, self.tag_alignsrv)
         self.land_srv           = rospy.Service('Land_UAV', landsrv, self.landsrv)
         self.takeoff_srv        = rospy.Service('Takeoff_UAV', landsrv, self.takeoffsrv)
@@ -101,7 +111,7 @@ class UAV:
         self.tag_landing = False
         self.tag_landing_cntr = 0
         self.ref_inputs = [0, 0, 4.9]
-        self.test_xr = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.point_xr = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
         
         self.thrust = Vector3()
         self.thrust.x = 0
@@ -113,6 +123,10 @@ class UAV:
         self.P = 0
         self.I = 0
         self.D = 0
+
+        self.Q_state=[1.0, 1.0, 1.0, 1, 1, 1, 1, 1]
+        self.Q_hovering=[1.0,1.0,1]
+        self.Q_u=[1,1,1]
         
 
 
@@ -146,17 +160,25 @@ class UAV:
                 print("/gazebo/get_model_state service call failed") 
 
         # Dynamic reconfiguration
-        #self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
+        self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
         while self.x_states[0] == 0.0:
             rospy.logwarn("Waiting for state update")
             self.get_current_state(False)
             self.zero_pos = [self.x_states[0], self.x_states[1], self.x_states[2]]
             rospy.logwarn(self.x_states)
+        self.mng = og.tcp.OptimizerTcpManager('python_build/optimizer01')
+        self.mng.start()
+        while not self.mng.ping():
+            rospy.logwarn("Waiting for solver")
+            print('.')
+            time.sleep(1)
+
         
         
 
     def run(self):
-            
+        
+             # check if the server is alive
         if self.gazebo:
             rospy.logwarn('ARMING...')
             self.arm_srv.call(True)
@@ -194,67 +216,44 @@ class UAV:
                 cntr += 1
                 self.traj_index += 1
 
-                if self.traj_index >= len(self.traj_pos): # If end of trajectory 
-                    if self.tag_landing == True: # if tag-landing then generate a new one
-                        self.tag_landing_cntr +=1
-                        self.tag_landsrv([''])
-                    else:
-                        self.traj_index -= 1
-                
-                # Setting the next point in the trajectory as reference 
-                self.xr[0] = self.traj_pos[self.traj_index,0]  #
-                self.xr[1] = self.traj_pos[self.traj_index,1]  # Position
-                self.xr[2] = self.traj_pos[self.traj_index,2]  #
 
-                self.xr[3] = self.traj_vel[self.traj_index,0]  #
-                self.xr[4] = self.traj_vel[self.traj_index,1]  # Velocity
-                self.xr[5] = self.traj_vel[self.traj_index,2]  #
+                if self.tag_landing == True: # if tag-landing then generate a new one
+                    self.tag_landing_cntr +=1
+                    self.tag_landsrv([''])
 
-                #pub_msg = float_array()
-                #pub_msg.header.stamp = rospy.Time.now()
-                #pub_msg.data = self.test_xr
-                #self.pub_plotter.publish(pub_msg)
+                if self.tag_follow:
+                    self.follow_tag([''])
 
-                state_errors = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                state_errors[0] = -(self.xr[0] - self.x_states[0])
-                state_errors[1] = -(self.xr[1] - self.x_states[1])
-                state_errors[2] = -(self.xr[2] - self.x_states[2])
-                state_errors[3] = -(self.xr[3] - self.x_states[3])
-                state_errors[4] = -(self.xr[4] - self.x_states[4])
-                state_errors[5] = -(self.xr[5] - self.x_states[5])
-                state_errors[6] = -(self.xr[6] - self.x_states[6])
-                state_errors[7] = -(self.xr[7] - self.x_states[7])
-
-                # REF, INPUT_REF, STATES, DISTURBANCES
-                #resp1 = self.mpc_calc(self.xr, [0.0, 0.0, 9.8], self.x_states, state_errors)
-                mpc_reference = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
-                resp1 = self.mpc_calc(mpc_reference, self.ref_inputs, state_errors, self.error_test)
-                 
+                x_0=self.x_states+ self.point_xr + self.ref_inputs + self.Q_state+ self.Q_hovering + self.Q_u#concatenate lists in Python
+                print("POINT XR")
+                print(self.point_xr)
+                solution = self.mng.call(x_0)
+                u0=solution[u'solution']
+                resp1 = u0[0:3]
                 yaw_error = self.yaw_setpoint - self.yaw
 
                 if self.gazebo:
                     self.msg.header.stamp = rospy.Time.now()
                     self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
-                    self.msg.x =  math.cos(-self.yaw) * resp1.control_signals[0] + math.sin(-self.yaw) * resp1.control_signals[1]
-                    self.msg.y = -math.sin(-self.yaw) * resp1.control_signals[0] + math.cos(-self.yaw) * resp1.control_signals[1]
-                    self.msg.z = yaw_error
-                    
-                    self.msg.F = resp1.control_signals[2]/15
+                    self.msg.x =  (math.cos(-self.yaw) * resp1[0] + math.sin(-self.yaw) * resp1[1])
+                    self.msg.y = -(-math.sin(-self.yaw) * resp1[0] + math.cos(-self.yaw) * resp1[1])
+                    self.msg.z = -yaw_error
+                    print(resp1[2])
+                    self.msg.F = resp1[2]/14.961
                     self.pub_command.publish(self.msg)
                     
 
                 else:
                     self.msg.header.stamp = rospy.Time.now()
-                    self.msg.roll =  math.cos(-self_yaw) * resp1.control_signals[0] + math.sin(-self_yaw) * resp1.control_signals[1]
-                    self.msg.pitch = -(-math.sin(-self_yaw) * resp1.control_signals[0] + math.cos(-self_yaw) * resp1.control_signals[1])
-                    self.msg.yaw_rate = 0
-                    self.thrust.z = resp1.control_signals[2]/15
+                    self.msg.roll =  math.cos(-self.yaw) * resp1.control_signals[0] + math.sin(-self.yaw) * resp1.control_signals[1]
+                    self.msg.pitch = -(-math.sin(-self.yaw) * resp1.control_signals[0] + math.cos(-self.yaw) * resp1.control_signals[1])
+                    self.msg.yaw_rate = -yaw_error
+                    self.thrust.z = resp1.control_signals[2]/14.961
                     self.msg.thrust = self.thrust
                     self.pub_command.publish(self.msg)
 
                 #rospy.logwarn(cntr)
-            self.rate.sleep()
+                self.rate.sleep()
             
 
 ########################################### MAIN END ###################################################################
@@ -284,13 +283,21 @@ class UAV:
             pose.pose.position.z = self.traj_pos[i,2]
             self.path_msg.poses.append(pose)
         self.path_pub.publish(self.path_msg)
-        self.test_xr = [self.x_states[0], self.x_states[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.point_xr = [self.x_states[0], self.x_states[1], 0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.ref_inputs = [0.0, 0.0, 5.0]
         return True
+    def follow_tag(self, req):
+        self.tag_follow = True
+        rospy.logwarn("Following tag")
+        #self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, 1.0, -self.tag_y, -self.tag_x, 0.0, 0.0, 0.0]
+
+        
     def tag_alignsrv(self, req):
         T =3# - self.tag_landing_cntr # Time to tag
 
         rospy.logwarn("Tag Landing Service Initiated")
-        self.test_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, self.x_states[2], 0.0, 0.0, -0.5, 0.0, 0.0] 
+        self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, self.x_states[2], 0.0, 0.0, -0.5, 0.0, 0.0] 
         #rospy.logwarn('Zerror')
         #rospy.logwarn(zerr)
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
@@ -310,10 +317,11 @@ class UAV:
             pose.pose.position.z = self.traj_pos[i,2]
             self.path_msg.poses.append(pose)
         self.path_pub.publish(self.path_msg)
+        self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
 
         return True
     def tag_landsrv(self, req):
-        T =10# - self.tag_landing_cntr # Time to tag
+        #T =10# - self.tag_landing_cntr # Time to tag
         self.tag_landing = True
         rospy.logwarn("Tag Landing Service Initiated")
         
@@ -324,7 +332,7 @@ class UAV:
         else:
             zerr = self.x_states[2]-0.2
         print(zerr)
-        self.test_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, zerr, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, zerr, 0.0, 0.0, 0.0, 0.0, 0.0] 
         #rospy.logwarn('Zerror')
         #rospy.logwarn(zerr)
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
@@ -394,8 +402,9 @@ class UAV:
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
                 [self.x_states[0], self.x_states[1], self.x_states[2]], \
                 [self.x_states[3], self.x_states[4], self.x_states[5]], \
-                [self.x_states[0],self.x_states[1], 1.5], [0,0,0], self.RATE,T)
+                [self.x_states[0], self.x_states[1], 1.5], [0,0,0], self.RATE,T)
         toc = rospy.Time.now()
+        rospy.logwarn(self.traj_pos)
         
         self.traj_index = 0
 
@@ -408,15 +417,22 @@ class UAV:
             pose.pose.position.z = self.traj_pos[i,2]
             self.path_msg.poses.append(pose)
         self.path_pub.publish(self.path_msg)
-        self.ref_inputs = [0,0,9.8]
-        self.test_xr = [0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        self.ref_inputs = [0,0,9.81]
+        self.point_xr = [0.0, 0.0, 1.50, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        
         return True
 
     def gotosrv(self, msg):
+        if msg.z == 0.0:
+            goal_height = self.point_xr[2]
+        else:
+            goal_height = msg.z
+        if msg.T == 0.0:
+            msg.T = 1.0
         self.traj_pos, self.traj_vel = self.generate_trajectory( \
                 [self.x_states[0], self.x_states[1], self.x_states[2]], \
                 [self.x_states[3], self.x_states[4], self.x_states[5]], \
-                [self.zero_pos[0]+msg.x,self.zero_pos[1]+msg.y, msg.z], [0,0,0], self.RATE, int(msg.T))
+                [self.zero_pos[0]+msg.x,self.zero_pos[1]+msg.y, goal_height], [0,0,0], self.RATE, int(msg.T))
         self.traj_index = 0
 
         self.path_msg.header.frame_id = "map"
@@ -428,6 +444,7 @@ class UAV:
             pose.pose.position.z = self.traj_pos[i,2]
             self.path_msg.poses.append(pose)
         self.path_pub.publish(self.path_msg)
+        self.point_xr = [self.zero_pos[0]+msg.x,self.zero_pos[1]+msg.y, goal_height, 0.0, 0.0, 0.0, 0.0, 0.0]
         return True
 
     ## Get current state
@@ -495,7 +512,7 @@ class UAV:
 
     def get_state(self, msg):
         if self.gazebo:
-            mult = -1
+            mult = 1
         else:
             mult = 1
         self.x_states_topic[0] = msg.pose.pose.position.x
