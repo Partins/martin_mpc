@@ -9,6 +9,7 @@ from scipy.linalg import expm
 import cvxpy as cp
 import matplotlib.pyplot as plt 
 from std_msgs.msg import Float32MultiArray, Int16
+from rosflight_extras.msg import float_array
 
 ## Services
 from gazebo_msgs.srv import GetModelState
@@ -22,6 +23,10 @@ class UAV_model:
 
     def __init__(self):
         self.time_pub = rospy.Publisher('mpc_time', Int16, queue_size=1)
+        self.pub_uav_state_plotter        = rospy.Publisher('uav_state_plotter', float_array, queue_size=1)
+        self.pub_uav_input_plotter        = rospy.Publisher('uav_input_plotter', float_array, queue_size=1)
+        self.pub_uav_control_plotter      = rospy.Publisher('uav_control_plotter', float_array, queue_size=1)
+
         ## observer things
         self.prev_inputs = [0, 0, 0] # u[k-1]
         rospy.init_node('mpc', anonymous=True)
@@ -42,9 +47,10 @@ class UAV_model:
         #self.R = 1*np.diag([20.0, 20.0, 20.0]) # Andreas
         self.K = np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         self.d = np.zeros(shape=(3,1), dtype=float)
+        self.obs_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
 
         # Max/min values
-        self.umin = np.array([-3.14/1, -3.14/1, 0.0])
+        self.umin = np.array([-3.14/1, -3.14/1, 4.0])
         self.umax = np.array([3.14/1, 3.14/1, 15])
 
         self.xmin = np.array([-np.inf, -np.inf, 0, -np.inf, -np.inf, -np.inf,
@@ -99,7 +105,7 @@ class UAV_model:
 
         #rospy.logwarn(np.shape(self.LH_pinv))
         # Dynamic reconfiguration
-        #self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
+        self.dyn_client = dynamic_reconfigure.client.Client("martin_mpc_param_node", timeout=30, config_callback=self.dyn_callback)
         
         rospy.logwarn("MPC READY")
         rospy.spin()
@@ -117,27 +123,49 @@ class UAV_model:
     
     def mpc_calc(self, req):
 
-        N = 10                  # Prediction horizon 
+        
+        #reference = np.array(req.reference) - (np.array(req.states) - np.array(self.obs_states))
+        N = 20               # Prediction horizon 
         u = cp.Variable((3,N))  # Three inputs roll desired, pitch desired, thrust
         x = cp.Variable((8,N+1))# Eight states
 
+        #print(req.reference)
         cost = 0 # Initialization
-        print(req.states)
+        #print(req.states)
+        req_ref = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
+        req_input = [0.0, 0.0, 9.8]
         constraints = [x[:,0] == req.states]
 
         for k in range(0,N):                                                                                                        # Input rate cost
-            cost += cp.quad_form(x[:,k], self.Q) + cp.quad_form(u[:,k] - req.input_ref, self.R)# + cp.quad_form(req.reference - x[:,N], self.K)#+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
+            cost += cp.quad_form(x[:,k]-req_ref, self.Q) + cp.quad_form(u[:,k]-req_input, self.R)#+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
             constraints += [x[:,k+1] == self.Ad@x[:,k] + self.Bd@u[:,k]] #  - self.Bdd@req.disturbance
             constraints += [self.umin <= u[:,k], u[:,k] <= self.umax]
-        
+    
+        #for k in range(0,N):                                                                                                        # Input rate cost
+        #    cost += cp.quad_form(req.reference - x[:,k], self.Q) + cp.quad_form(req.input_ref - u[:,k], self.R)#+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
+        #    constraints += [x[:,k+1] == self.Ad@x[:,k] + self.Bd@u[:,k]] #  - self.Bdd@req.disturbance
+        #    constraints += [self.umin <= u[:,k], u[:,k] <= self.umax]    
         prob = cp.Problem(cp.Minimize(cost), constraints)
-        prob.solve()
-        self.prev_inputs = u.value[:,0]
+        prob.solve(verbose=False)
+        
+        uav_plot_msg = float_array()
+        print(x.value[2,:])
+        #for i in range(len(x.value[2,:])):
+        uav_plot_msg.header.stamp = rospy.Time.now()
+        uav_plot_msg.data = x.value[2,:]
+        self.pub_uav_state_plotter.publish(uav_plot_msg)
+        
+        uav_plot_msg.data = req.states
+        self.pub_uav_input_plotter.publish(uav_plot_msg)
+        uav_plot_msg.data = u.value[2,:]
+        self.pub_uav_control_plotter.publish(uav_plot_msg) 
 
-        #print(u.value)
+        self.prev_inputs = u.value[:,1]
+        #self.obs_states = self.observer(u.value[:,0], req.states)
+
         return mpcsrvResponse(u.value[:,0])
 
-    def observer(self, states, inputs, disturbance):
+    def observer(self, inputs, states):
         
         x_states = np.matmul(self.Ad, states) + np.matmul(self.Bd, inputs)
         

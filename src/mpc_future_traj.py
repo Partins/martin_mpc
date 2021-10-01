@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from numpy.core.numeric import NaN
 from numpy.lib.nanfunctions import _divide_by_count
 import opengen as og
 import casadi.casadi as cs
@@ -9,7 +10,7 @@ import math
 
 
 N = 40 # prediction horizon
-dt = 1.0/20  # sampling time
+dt = 12/20  # sampling time
 nu = 3 # number of inputs
 nu_hover = nu  # hovering condition
 
@@ -49,7 +50,7 @@ tau_roll = 0.5#0.05 # Time constant
 tau_pitch = 0.5#0.05 # Time constant
 K_roll = 1#0.15  # Roll angle gain
 K_pitch = 1#0.15 # Pitch angle gain
-
+c = []
 for i in range(N) :
     k = (i) * nu
     u0=u[k:k+nu] # desired input at the prediction step N
@@ -98,6 +99,7 @@ for i in range(N) :
     J+= cs.sumsqr(Q_state*(X-x_ref))+cs.sumsqr(Q_hovering*(u0-u_hover))
     if i < N - 1:
         J+=cs.sumsqr(Q_u*(u0-u[(i+1)*nu:(i+1)*nu+nu]))
+        #c = cs.vertcat(c, cs.fmax(0.0,X[5]))
 # # System model
 # # ------------------------------------
 
@@ -128,8 +130,9 @@ for i in range(N) :
 
 # umin = [-3.13/12, -3.14/12, 5.0] * (nu*N)
 # umax = [3.13/12, 3.14/12, 15.0] * (nu*N)
+print(c)
 u_min = [-math.pi/12,-math.pi/12,0]
-u_max = [math.pi/12,math.pi/12,14.961+9.81]
+u_max = [math.pi/12,math.pi/12,14.961]
 umin=np.kron(np.ones((1,N)),u_min)
 umin=umin.tolist()
 umin=umin[0]
@@ -139,26 +142,29 @@ umax=umax[0]
 
 bounds= og.constraints.Rectangle(umin,umax)
 problem = og.builder.Problem(u, p, J) \
-.with_constraints(bounds)
+    .with_constraints(bounds)
 
-tcp_config = og.config.TcpServerConfiguration(bind_port=3303)        
+tcp_config = og.config.TcpServerConfiguration(bind_port=3304)        
           
 meta = og.config.OptimizerMeta() \
     .with_version("0.0.0") \
     .with_authors(["A. Papadimitriou"]) \
     .with_licence("CC4.0-By") \
-    .with_optimizer_name("optimizer01") 
+    .with_optimizer_name("optimizer02") 
 build_config = og.config.BuildConfiguration() \
-    .with_build_directory("python_build") \
+    .with_build_directory("python_build2") \
     .with_build_mode("release") \
     .with_tcp_interface_config(tcp_config)\
     .with_build_c_bindings()  \
-    .with_rebuild(True)
+    .with_rebuild(True) 
+    
 solver_config = og.config.SolverConfiguration() \
     .with_tolerance(1e-5) \
     .with_max_inner_iterations(155) \
     .with_penalty_weight_update_factor(5)\
-    .with_max_outer_iterations(4)
+    .with_max_outer_iterations(4) \
+    .with_delta_tolerance(1e-10)\
+    .with_initial_penalty(100.0)   
     #.with_lfbgs_memory(15) \
 builder = og.builder.OpEnOptimizerBuilder(problem,
     metadata=meta,
