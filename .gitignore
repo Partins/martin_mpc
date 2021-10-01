@@ -2,4 +2,4 @@
 .vscode/settings.json
 src/.vscode/c_cpp_properties.json
 src/.vscode/settings.json
-src/python*
+
