@@ -22,7 +22,7 @@ from apriltag_ros.msg import AprilTagDetectionArray
 from rosflight_extras.srv import arm_uav
 from rosflight_extras.msg import float_array
 from martin_mpc.srv import mpcsrv, landsrv, gotosrv
-from mav_msgs.msg import RollPitchYawrateThrust
+#from mav_msgs.msg import RollPitchYawrateThrust
 
 
 #Params
@@ -59,7 +59,7 @@ class UAV:
             self.state_update   = rospy.Subscriber('multirotor/truth/NWU', Odometry, self.get_state)
         else:
             self.state_update   = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
-            self.pub_command    = rospy.Publisher('command/roll_pitch_yawrate_thrust', RollPitchYawrateThrust, queue_size=1)    
+            self.pub_command    = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)    
 
 
         ## Publishers
@@ -166,7 +166,7 @@ class UAV:
             self.get_current_state(False)
             self.zero_pos = [self.x_states[0], self.x_states[1], self.x_states[2]]
             rospy.logwarn(self.x_states)
-        self.mng = og.tcp.OptimizerTcpManager('python_build/optimizer01')
+        self.mng = og.tcp.OptimizerTcpManager('python_build2/optimizer02')
         self.mng.start()
         while not self.mng.ping():
             rospy.logwarn("Waiting for solver")
@@ -195,7 +195,7 @@ class UAV:
                                                                 [0,0,0], \
                                                                 [self.zero_pos[0], self.zero_pos[1], self.zero_pos[2]], \
                                                                 [0,0,0], 1,1)
-        print(self.traj_vel)
+        #print(self.traj_vel)
 
         
 
@@ -204,53 +204,72 @@ class UAV:
         # Counters
         self.traj_index = 0
         cntr = 0
-
         if self.gazebo:
             self.msg.F = 0
         else: 
             self.msg.thrust = 0  
 
         while not rospy.is_shutdown():
-
+            #print(self.traj_pos[1])
             if not self.aborting:
                 cntr += 1
                 self.traj_index += 1
 
+                if self.traj_index == 40:
+                    self.traj_index = 39
+                #if self.tag_landing == True: # if tag-landing then generate a new one
+                #    self.tag_landing_cntr +=1
+                #    self.tag_landsrv([''])
 
-                if self.tag_landing == True: # if tag-landing then generate a new one
-                    self.tag_landing_cntr +=1
-                    self.tag_landsrv([''])
+                                # Setting the next point in the trajectory as reference 
+                #self.xr[0] = self.traj_pos[self.traj_index,0]  #
+                #self.xr[1] = self.traj_pos[self.traj_index,1]  # Position
+                #self.xr[2] = self.traj_pos[self.traj_index,2]  #
+#
+                #self.xr[3] = self.traj_vel[self.traj_index,0]  #
+                #self.xr[4] = self.traj_vel[self.traj_index,1]  # Velocity
+                #self.xr[5] = self.traj_vel[self.traj_index,2]  #
 
+                #pub_msg = float_array()
+                #pub_msg.header.stamp = rospy.Time.now()
+                #pub_msg.data = self.point_xr
+                #self.pub_plotter.publish(pub_msg)
                 if self.tag_follow:
                     self.follow_tag([''])
 
                 x_0=self.x_states+ self.point_xr + self.ref_inputs + self.Q_state+ self.Q_hovering + self.Q_u#concatenate lists in Python
-                print("POINT XR")
-                print(self.point_xr)
-                solution = self.mng.call(x_0)
-                u0=solution[u'solution']
-                resp1 = u0[0:3]
-                yaw_error = self.yaw_setpoint - self.yaw
-
-                if self.gazebo:
-                    self.msg.header.stamp = rospy.Time.now()
-                    self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
-                    self.msg.x =  (math.cos(-self.yaw) * resp1[0] + math.sin(-self.yaw) * resp1[1])
-                    self.msg.y = -(-math.sin(-self.yaw) * resp1[0] + math.cos(-self.yaw) * resp1[1])
-                    self.msg.z = -yaw_error
-                    print(resp1[2])
-                    self.msg.F = resp1[2]/14.961
-                    self.pub_command.publish(self.msg)
-                    
-
-                else:
-                    self.msg.header.stamp = rospy.Time.now()
-                    self.msg.roll =  math.cos(-self.yaw) * resp1.control_signals[0] + math.sin(-self.yaw) * resp1.control_signals[1]
-                    self.msg.pitch = -(-math.sin(-self.yaw) * resp1.control_signals[0] + math.cos(-self.yaw) * resp1.control_signals[1])
-                    self.msg.yaw_rate = -yaw_error
-                    self.thrust.z = resp1.control_signals[2]/14.961
-                    self.msg.thrust = self.thrust
-                    self.pub_command.publish(self.msg)
+                print("IN MAIN")
+                print(cs.fmax(0.0,self.traj_pos[10,2]))
+                #print("POINT XR")
+                #print(self.point_xr)
+                #solution = self.mng.call(x_0)
+                #u0=solution[u'solution']
+                #print("TYPE")
+                #print(type(u0))
+                #resp1 = u0[0:3]
+                #yaw_error = self.yaw_setpoint - self.yaw
+                self.generate_trajectory_optimizer()
+                #print(self.traj_pos)
+                self.show_path(40, self.traj_pos)
+                #if self.gazebo:
+                #    self.msg.header.stamp = rospy.Time.now()
+                #    self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
+                #    self.msg.x =  (math.cos(-self.yaw) * resp1[0] + math.sin(-self.yaw) * resp1[1])
+                #    self.msg.y = -(-math.sin(-self.yaw) * resp1[0] + math.cos(-self.yaw) * resp1[1])
+                #    self.msg.z = -yaw_error
+                #    print(resp1[2])
+                #    self.msg.F = resp1[2]/14.961
+                #    self.pub_command.publish(self.msg)
+                #    
+#
+                #else:
+                #    self.msg.header.stamp = rospy.Time.now()
+                #    self.msg.roll =  math.cos(-self.yaw) * resp1.control_signals[0] + math.sin(-self.yaw) * resp1.control_signals[1]
+                #    self.msg.pitch = -(-math.sin(-self.yaw) * resp1.control_signals[0] + math.cos(-self.yaw) * resp1.control_signals[1])
+                #    self.msg.yaw_rate = -yaw_error
+                #    self.thrust.z = resp1.control_signals[2]/14.961
+                #    self.msg.thrust = self.thrust
+                #    self.pub_command.publish(self.msg)
 
                 #rospy.logwarn(cntr)
                 self.rate.sleep()
@@ -410,7 +429,7 @@ class UAV:
 
         self.path_msg.header.frame_id = "map"
         self.path_msg.header.stamp = rospy.Time.now()
-        for i in range(T*self.RATE):
+        for i in range(40):
             pose = PoseStamped()
             pose.pose.position.x = self.traj_pos[i,0]
             pose.pose.position.y = self.traj_pos[i,1]
@@ -435,18 +454,29 @@ class UAV:
                 [self.zero_pos[0]+msg.x,self.zero_pos[1]+msg.y, goal_height], [0,0,0], self.RATE, int(msg.T))
         self.traj_index = 0
 
-        self.path_msg.header.frame_id = "map"
-        self.path_msg.header.stamp = rospy.Time.now()
-        for i in range(int(msg.T)*self.RATE):
-            pose = PoseStamped()
-            pose.pose.position.x = self.traj_pos[i,0]
-            pose.pose.position.y = self.traj_pos[i,1]
-            pose.pose.position.z = self.traj_pos[i,2]
-            self.path_msg.poses.append(pose)
-        self.path_pub.publish(self.path_msg)
+        #self.path_msg.header.frame_id = "map"
+        #self.path_msg.header.stamp = rospy.Time.now()
+        #for i in range(int(msg.T)*self.RATE):
+        #    pose = PoseStamped()
+        #    pose.pose.position.x = self.traj_pos[i,0]
+        #    pose.pose.position.y = self.traj_pos[i,1]
+        #    pose.pose.position.z = self.traj_pos[i,2]
+        #    self.path_msg.poses.append(pose)
+        #self.path_pub.publish(self.path_msg)
         self.point_xr = [self.zero_pos[0]+msg.x,self.zero_pos[1]+msg.y, goal_height, 0.0, 0.0, 0.0, 0.0, 0.0]
         return True
 
+    def show_path(self, N, path):
+        self.path_msg = Path()
+        self.path_msg.header.frame_id = "world"
+        self.path_msg.header.stamp = rospy.Time.now()
+        for i in range(N):
+            pose = PoseStamped()
+            pose.pose.position.x = path[i,0]
+            pose.pose.position.y = path[i,1]
+            pose.pose.position.z = path[i,2]
+            self.path_msg.poses.append(pose)
+        self.path_pub.publish(self.path_msg)
     ## Get current state
     #   This function gets the state of the UAV without race conditions. 
     #   If the tag_tracking is set to True the position will be relative to the
@@ -584,7 +614,8 @@ class UAV:
         self.is_rc_override = msg.rc_override
 
     def generate_trajectory(self, start_pos, start_vel, goal_pos, goal_vel, rate, T):
-        n = T * rate # Amount of points
+        T = 2
+        n = 40# Amount of points
 
         # From CORKE:  
         # AMAT*x = BMAT
@@ -606,7 +637,7 @@ class UAV:
 
         
         # Position
-        for t in range(1,n+1):
+        for t in range(1,n):
             t = (t)*T/n
             t_mat = np.array([ [t**5], [t**4], [t**3], [t**2], [t], [1] ])
             test_pos = np.append(test_pos, np.transpose(x @ t_mat), axis=0)
@@ -619,6 +650,69 @@ class UAV:
 
         return test_pos, test_vel          
     
+    def generate_trajectory_optimizer(self, start, goal):
+        #print("IN GENERATOR")
+        #start = [0.5, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        #goal = [0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0]
+        ref_inputs =  [0.0, 0.0, 9.8]
+        #x_0=self.x_states+ goal + ref_inputs + self.Q_state+ self.Q_hovering + self.Q_u #concatenate lists in Python
+        x_0=start+ goal + ref_inputs + self.Q_state+ self.Q_hovering + self.Q_u
+        #print(len(x_0))
+        print("B4 call")
+        solution = self.mng.call(x_0)
+        #print("After solving")
+        u0=solution[u'solution']
+        g = 9.81#9.80
+        Ax = 0.1#0.01
+        Ay = 0.1#0.01
+        Az = 0.2#0.01
+        # gravity = 9.80 ?????
+        tau_roll = 0.5#0.05 # Time constant
+        tau_pitch = 0.5#0.05 # Time constant
+        K_roll = 1#0.15  # Roll angle gain
+        K_pitch = 1#0.15 # Pitch angle gain
+        X = np.array([start[0:3]])
+        x = start[0]
+        y = start[1]
+        z = start[2]
+        dX = np.array([start[3:6]])
+        dx = start[3]
+        dy = start[4]
+        dz = start[5]
+        roll = 0
+        pitch = 0
+        for i in range(40):
+            #print("LOOP")
+            #print(i)
+
+
+            #print("dX")
+            #print(dX)
+
+            resp1 = u0[(i)*3:(i)*3+3]
+            #print("U")
+            #print(u0)
+            ddx     = -Ax * dX[-1,0]    + g * pitch
+            ddy     = -Ay * dX[-1,1]    - g * roll 
+            ddz     = -Az * dX[-1,2]    + resp1[2] - g
+            dphi    = (-1/tau_roll)*roll   + K_roll/tau_roll * resp1[0]
+            dtheta  = (-1/tau_pitch)*pitch  + K_pitch/tau_pitch * resp1[1]
+            dt = 12.0/20
+            x = X[-1,0] + dX[-1,0]*dt
+            y = X[-1,1] + dX[-1,1]*dt
+            z = X[-1,2] + dX[-1,2]*dt
+            dx = dx + ddx*dt
+            dy = dy + ddy*dt
+            dz = dz + ddz*dt
+            roll = roll + dphi*dt
+            pitch = pitch + dtheta*dt
+
+            X = np.append(X, np.array([[x, y, z]]), axis=0)
+            dX = np.append(dX, np.array([[dx, dy, dz]]), axis=0)
+        self.traj_pos = X
+        self.traj_vel = dX
+        print("dX")
+        print(dX)    
 if __name__ == '__main__':
     try:
         multirotor = UAV()
