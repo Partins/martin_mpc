@@ -19,7 +19,7 @@ from gazebo_msgs.srv import GetModelState, SetModelState
 from apriltag_ros.msg import AprilTagDetectionArray
 from rosflight_extras.srv import arm_uav
 from martin_mpc.srv import mpcsrv, landsrv, gotosrv
-#from mav_msgs.msg import RollPitchYawrateThrust
+from mav_msgs.msg import RollPitchYawrateThrust
 
 
 #Params
@@ -31,7 +31,7 @@ class UAV:
         self.tag_follow = config.tag_follow
         self.tot_error[0] = 0
         self.tot_error[1] = 0
-        self.P = config.P
+        self.P = 0
         self.I = config.I
         self.D = config.D
 
@@ -49,7 +49,7 @@ class UAV:
             self.state_update   = rospy.Subscriber('multirotor/truth/NED', Odometry, self.get_state)
         else:
             self.state_update   = rospy.Subscriber('vicon/shafter2/shafter2/odom', Odometry, self.get_state)
-            self.pub_command    = rospy.Publisher('command/RollPitchYawrateThrust', RollPitchYawrateThrust, queue_size=1)    
+            self.pub_command    = rospy.Publisher('command/roll_pitch_yawrate_thrust', RollPitchYawrateThrust, queue_size=1)    
 
 
         ## Publishers
@@ -220,15 +220,15 @@ class UAV:
 
                 #if abs(self.tot_error[0]) <= antiwind:
                     #self.tot_error[0] += (self.xr[0]+self.x_states[0])*self.I
-                self.tot_error[0] += (error_x)*self.I #+ self.x_states[0]*D
+                #self.tot_error[0] += (error_x)*self.I #+ self.x_states[0]*D
 
 ###             
                 #if abs(self.tot_error[1]) <= antiwind:
                     #self.tot_error[0] += (self.xr[0]+self.x_states[0])*self.I
-                self.tot_error[1] += (error_y)*self.I #+ self.x_states[1]*D
+                #self.tot_error[1] += (error_y)*self.I #+ self.x_states[1]*D
 
-                self.error_test[0] = self.P * error_x + self.tot_error[0]
-                self.error_test[1] = self.P * error_y + self.tot_error[1]
+                #self.error_test[0] = self.P * error_x + self.tot_error[0]
+                #self.error_test[1] = self.P * error_y + self.tot_error[1]
                 
 
 
@@ -241,19 +241,22 @@ class UAV:
                 #self.path_msg.poses.append(pose)
                 #self.path_pub.publish(self.path_msg)
                 # Optimization (mpc.py)
-                stest = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                stest[0] = -(self.xr[0] - self.x_states[0])
-                stest[1] = -(self.xr[1] - self.x_states[1])
-                stest[2] = -(self.xr[2] - self.x_states[2])
-                stest[3] = -(self.xr[3] - self.x_states[3])
-                stest[4] = -(self.xr[4] - self.x_states[4])
-                stest[5] = -(self.xr[5] - self.x_states[5])
-                stest[6] = -(self.xr[6] - self.x_states[6])
-                stest[7] = -(self.xr[7] - self.x_states[7])
+                state_errors = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                state_errors[0] = -(self.xr[0] - self.x_states[0])
+                state_errors[1] = -(self.xr[1] - self.x_states[1])
+                state_errors[2] = -(self.xr[2] - self.x_states[2])
+                state_errors[3] = -(self.xr[3] - self.x_states[3])
+                state_errors[4] = -(self.xr[4] - self.x_states[4])
+                state_errors[5] = -(self.xr[5] - self.x_states[5])
+                state_errors[6] = -(self.xr[6] - self.x_states[6])
+                state_errors[7] = -(self.xr[7] - self.x_states[7])
+                zero_reference = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
                 #rospy.logwarn(stest)
                 #resp1 = self.mpc_calc(self.xr, [0.0, 0.0, 9.8], self.x_states, self.tot_error)
-                resp1 = self.mpc_calc([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 9.8], stest, self.error_test)
-                 
+                tic = rospy.Time.now()
+                resp1 = self.mpc_calc(zero_reference, [0.0, 0.0, 9.8], state_errors, [0,0,0])
+                toc = rospy.Time.now()
+                rospy.logwarn(toc-tic)
                 yaw_error = self.yaw_setpoint - self.yaw
 
                 ## UAV Command message

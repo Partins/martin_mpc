@@ -117,13 +117,15 @@ class UAV_model:
     
     def mpc_calc(self, req):
     
-        temp1 = -self.Bdd @ req.disturbance
-        RH = np.transpose(np.concatenate([[temp1], [req.reference]], axis=1))
-        tmp = self.LH_pinv @ RH
-        reference = tmp[0:8,0]
-        input_ref = tmp[7:10,0]
-        input_ref[2] = 9.8
-        
+        #temp1 = -self.Bdd @ req.disturbance
+        #RH = np.transpose(np.concatenate([[temp1], [req.reference]], axis=1))
+        #tmp = self.LH_pinv @ RH
+        #reference = tmp[0:8,0]
+        #input_ref = tmp[7:10,0]
+        #input_ref[2] = 9.8
+
+        x_states = req.states
+        inputs = req.input_ref
         # Prediction horizon
         N = 10
         # Define problem
@@ -138,7 +140,7 @@ class UAV_model:
         rospy.logwarn(req.states-y_hat)
         constraints = [x[:,0] == req.states]    
         for k in range(0,N):                                                                                                        # Input rate cost
-            cost += cp.quad_form(x[:,k] - reference, self.Q) + cp.quad_form(u[:,k] - input_ref, self.R) #+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
+            cost += cp.quad_form(x[:,k] - req.reference, self.Q) + cp.quad_form(u[:,k] - req.input_ref, self.R) #+ cp.quad_form(u[:,k] - self.prev_inputs, self.Rd)
             constraints += [x[:,k+1] == self.Ad@x[:,k] + self.Bd@u[:,k] - temp1] 
             constraints += [self.umin <= u[:,k], u[:,k] <= self.umax]
             #constraints += [self.xmin <= x[:,k], x[:,k] <= self.xmax]
