@@ -246,7 +246,7 @@ class UAV:
                 resp1 = u0[0:3]
                 yaw_error = self.yaw_setpoint - self.yaw
                 
-                self.show_path(40, self.traj_pos)
+                #self.show_path(40, self.traj_pos)
                 if self.gazebo:
                     self.msg.header.stamp = rospy.Time.now()
                     self.msg.mode = Command.MODE_ROLL_PITCH_YAWRATE_THROTTLE
@@ -318,10 +318,6 @@ class UAV:
         self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, zerr, 0.0, 0.0, 0.0, 0.0, 0.0] 
         #rospy.logwarn('Zerror')
         #rospy.logwarn(zerr)
-        self.traj_pos, self.traj_vel = self.generate_trajectory( \
-                [self.x_states[0], self.x_states[1], self.x_states[2]], \
-                [self.x_states[3], self.x_states[4], self.x_states[5]], \
-                [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, 0.0], [0,0,0], self.RATE,T)
 
         rospy.logwarn("Landing trajectory generated with: " + str(self.RATE * T) + " points")
         self.traj_index = 0
