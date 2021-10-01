@@ -309,30 +309,13 @@ class UAV:
         rospy.logwarn("Tag Landing Service Initiated")
         
         tic = rospy.Time.now()
-        #generate_trajectory(self, start_pos, start_vel, goal_pos, goal_vel, rate, T):
         if self.x_states[2]-0.2 <= 0:
             zerr = 0
         else:
             zerr = self.x_states[2]-0.2
-        print(zerr)
+
         self.point_xr = [self.x_states[0]-self.tag_y, self.x_states[1]-self.tag_x, zerr, 0.0, 0.0, 0.0, 0.0, 0.0] 
-        #rospy.logwarn('Zerror')
-        #rospy.logwarn(zerr)
 
-        rospy.logwarn("Landing trajectory generated with: " + str(self.RATE * T) + " points")
-        self.traj_index = 0
-
-        self.path_msg.header.frame_id = "map"
-        self.path_msg.header.stamp = rospy.Time.now()
-        for i in range(T*self.RATE):
-            pose = PoseStamped()
-            pose.pose.position.x = self.traj_pos[i,0]
-            pose.pose.position.y = self.traj_pos[i,1]
-            pose.pose.position.z = self.traj_pos[i,2]
-            self.path_msg.poses.append(pose)
-        self.path_pub.publish(self.path_msg)
-        #if self.x_states[2] < 0.1:
-        #    self.tag_landing = False
 
         return True
 
